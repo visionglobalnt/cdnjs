@@ -1,5 +1,5 @@
 /*
- * JQuery zTree exHideNodes 3.5.01
+ * JQuery zTree exHideNodes v3.5.16-beta.5
  * http://zTree.me/
  *
  * Copyright (c) 2010 Hunter.z
@@ -8,7 +8,7 @@
  * http://www.opensource.org/licenses/mit-license.php
  *
  * email: hunter.z@263.net
- * Date: 2012-12-21
+ * Date: 2013-12-29
  */
 (function($){
 	//default init node of exLib
@@ -54,8 +54,10 @@
 	_data = {
 		initHideForExCheck: function(setting, n) {
 			if (n.isHidden && setting.check && setting.check.enable) {
-				n._nocheck = !!n.nocheck
-				n.nocheck = true;
+				if(typeof n._nocheck == "undefined") {
+					n._nocheck = !!n.nocheck
+					n.nocheck = true;
+				}
 				n.check_Child_State = -1;
 				if (view.repairParentChkClassWithSelf) {
 					view.repairParentChkClassWithSelf(setting, n);
@@ -64,10 +66,12 @@
 		},
 		initShowForExCheck: function(setting, n) {
 			if (!n.isHidden && setting.check && setting.check.enable) {
-				n.nocheck = n._nocheck;
-				delete n._nocheck;
+				if(typeof n._nocheck != "undefined") {
+					n.nocheck = n._nocheck;
+					delete n._nocheck;
+				}
 				if (view.setChkClass) {
-					var checkObj = $("#" + n.tId + consts.id.CHECK);
+					var checkObj = $$(n, consts.id.CHECK, setting);
 					view.setChkClass(setting, checkObj, n);
 				}
 				if (view.repairParentChkClassWithSelf) {
@@ -107,12 +111,12 @@
 			}
 		},
 		makeDOMNodeMainBefore: function(html, setting, node) {
-			html.push("<li ", (node.isHidden ? "style='display:none;' " : ""), "id='", node.tId, "' class='level", node.level,"' tabindex='0' hidefocus='true' treenode>");
+			html.push("<li ", (node.isHidden ? "style='display:none;' " : ""), "id='", node.tId, "' class='", consts.className.LEVEL, node.level,"' tabindex='0' hidefocus='true' treenode>");
 		},
 		showNode: function(setting, node, options) {
 			node.isHidden = false;
 			data.initShowForExCheck(setting, node);
-			$("#" + node.tId).show();
+			$$(node, setting).show();
 		},
 		showNodes: function(setting, nodes, options) {
 			if (!nodes || nodes.length == 0) {
@@ -139,7 +143,7 @@
 			node.isLastNode = false;
 			data.initHideForExCheck(setting, node);
 			view.cancelPreSelectedNode(setting, node);
-			$("#" + node.tId).hide();
+			$$(node, setting).hide();
 		},
 		hideNodes: function(setting, nodes, options) {
 			if (!nodes || nodes.length == 0) {
@@ -267,7 +271,8 @@
 	consts = zt.consts,
 	view = zt._z.view,
 	data = zt._z.data,
-	event = zt._z.event;
+	event = zt._z.event,
+	$$ = tools.$;
 
 	data.addInitNode(_initNode);
 	data.addBeforeA(_beforeA);
@@ -275,24 +280,20 @@
 
 //	Override method in core
 	var _dInitNode = data.initNode;
-	data.tmpHideParent = -1;
 	data.initNode = function(setting, level, node, parentNode, isFirstNode, isLastNode, openFlag) {
-		if (data.tmpHideParent !== parentNode) {
-			data.tmpHideParent = parentNode;
-			var tmpPNode = (parentNode) ? parentNode: data.getRoot(setting),
+		var tmpPNode = (parentNode) ? parentNode: data.getRoot(setting),
 			children = tmpPNode[setting.data.key.children];
-			data.tmpHideFirstNode = view.setFirstNodeForHide(setting, children);
-			data.tmpHideLastNode = view.setLastNodeForHide(setting, children);
-			view.setNodeLineIcos(setting, data.tmpHideFirstNode);
-			view.setNodeLineIcos(setting, data.tmpHideLastNode);
-		}
+		data.tmpHideFirstNode = view.setFirstNodeForHide(setting, children);
+		data.tmpHideLastNode = view.setLastNodeForHide(setting, children);
+		view.setNodeLineIcos(setting, data.tmpHideFirstNode);
+		view.setNodeLineIcos(setting, data.tmpHideLastNode);
 		isFirstNode = (data.tmpHideFirstNode === node);
 		isLastNode = (data.tmpHideLastNode === node);
 		if (_dInitNode) _dInitNode.apply(data, arguments);
 		if (isLastNode) {
 			view.clearOldLastNode(setting, node);
 		}
-	}
+	};
 
 	var _makeChkFlag = data.makeChkFlag;
 	if (!!_makeChkFlag) {

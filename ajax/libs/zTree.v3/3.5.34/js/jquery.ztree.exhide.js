@@ -1,6 +1,6 @@
 /*
- * JQuery zTree exHideNodes 3.5.01
- * http://zTree.me/
+ * JQuery zTree exHideNodes v3.5.34
+ * http://treejs.cn/
  *
  * Copyright (c) 2010 Hunter.z
  *
@@ -8,13 +8,20 @@
  * http://www.opensource.org/licenses/mit-license.php
  *
  * email: hunter.z@263.net
- * Date: 2012-12-21
+ * Date: 2018-02-12
  */
 (function($){
+  var _setting = {
+    data: {
+      key: {
+        isHidden: "isHidden"
+      }
+    }
+  };
 	//default init node of exLib
 	var _initNode = function(setting, level, n, parentNode, isFirstNode, isLastNode, openFlag) {
-		if (typeof n.isHidden == "string") n.isHidden = tools.eqs(n.isHidden, "true");
-		n.isHidden = !!n.isHidden;
+		var isHidden = data.isHidden(setting, n);
+		data.isHidden(setting, n, isHidden);
 		data.initHideForExCheck(setting, n);
 	},
 	//add dom for check
@@ -43,7 +50,7 @@
 		var _checkNode = zTreeTools.checkNode;
 		if (_checkNode) {
 			zTreeTools.checkNode = function(node, checked, checkTypeFlag, callbackFlag) {
-				if (!!node && !!node.isHidden) {
+				if (!!node && !!data.isHidden(setting, node)) {
 					return;
 				}
 				_checkNode.apply(zTreeTools, arguments);
@@ -53,9 +60,12 @@
 	//method of operate data
 	_data = {
 		initHideForExCheck: function(setting, n) {
-			if (n.isHidden && setting.check && setting.check.enable) {
-				n._nocheck = !!n.nocheck
-				n.nocheck = true;
+      var isHidden = data.isHidden(setting, n);
+			if (isHidden && setting.check && setting.check.enable) {
+				if(typeof n._nocheck == "undefined") {
+					n._nocheck = !!n.nocheck
+					n.nocheck = true;
+				}
 				n.check_Child_State = -1;
 				if (view.repairParentChkClassWithSelf) {
 					view.repairParentChkClassWithSelf(setting, n);
@@ -63,11 +73,14 @@
 			}
 		},
 		initShowForExCheck: function(setting, n) {
-			if (!n.isHidden && setting.check && setting.check.enable) {
-				n.nocheck = n._nocheck;
-				delete n._nocheck;
+      var isHidden = data.isHidden(setting, n);
+			if (!isHidden && setting.check && setting.check.enable) {
+				if(typeof n._nocheck != "undefined") {
+					n.nocheck = n._nocheck;
+					delete n._nocheck;
+				}
 				if (view.setChkClass) {
-					var checkObj = $("#" + n.tId + consts.id.CHECK);
+					var checkObj = $$(n, consts.id.CHECK, setting);
 					view.setChkClass(setting, checkObj, n);
 				}
 				if (view.repairParentChkClassWithSelf) {
@@ -92,27 +105,30 @@
 				n = n.getNextNode();
 			}
 		},
-		clearOldLastNode: function(setting, node) {
-			var n = node.getPreNode();
-			while(!!n){
-				if (n.isLastNode) {
-					n.isLastNode = false;
-					view.setNodeLineIcos(setting, n);
-					break;
-				}
-				if (n.isFirstNode) {
-					break;
-				}
-				n = n.getPreNode();
-			}
-		},
+        clearOldLastNode: function(setting, node, openFlag) {
+            var n = node.getPreNode();
+            while(!!n){
+                if (n.isLastNode) {
+                    n.isLastNode = false;
+                    if (openFlag) {
+                        view.setNodeLineIcos(setting, n);
+                    }
+                    break;
+                }
+                if (n.isFirstNode) {
+                    break;
+                }
+                n = n.getPreNode();
+            }
+        },
 		makeDOMNodeMainBefore: function(html, setting, node) {
-			html.push("<li ", (node.isHidden ? "style='display:none;' " : ""), "id='", node.tId, "' class='level", node.level,"' tabindex='0' hidefocus='true' treenode>");
+      var isHidden = data.isHidden(setting, node);
+			html.push("<li ", (isHidden ? "style='display:none;' " : ""), "id='", node.tId, "' class='", consts.className.LEVEL, node.level,"' tabindex='0' hidefocus='true' treenode>");
 		},
 		showNode: function(setting, node, options) {
-			node.isHidden = false;
+      data.isHidden(setting, node, false);
 			data.initShowForExCheck(setting, node);
-			$("#" + node.tId).show();
+			$$(node, setting).show();
 		},
 		showNodes: function(setting, nodes, options) {
 			if (!nodes || nodes.length == 0) {
@@ -128,18 +144,18 @@
 				view.showNode(setting, n, options);
 			}
 			for (var tId in pList) {
-				var children = pList[tId][setting.data.key.children];
+				var children = data.nodeChildren(setting, pList[tId]);
 				view.setFirstNodeForShow(setting, children);
 				view.setLastNodeForShow(setting, children);
 			}
 		},
 		hideNode: function(setting, node, options) {
-			node.isHidden = true;
+      data.isHidden(setting, node, true);
 			node.isFirstNode = false;
 			node.isLastNode = false;
 			data.initHideForExCheck(setting, node);
 			view.cancelPreSelectedNode(setting, node);
-			$("#" + node.tId).hide();
+			$$(node, setting).hide();
 		},
 		hideNodes: function(setting, nodes, options) {
 			if (!nodes || nodes.length == 0) {
@@ -155,25 +171,27 @@
 				view.hideNode(setting, n, options);
 			}
 			for (var tId in pList) {
-				var children = pList[tId][setting.data.key.children];
+				var children = data.nodeChildren(setting, pList[tId]);
 				view.setFirstNodeForHide(setting, children);
 				view.setLastNodeForHide(setting, children);
 			}
 		},
 		setFirstNode: function(setting, parentNode) {
-			var childKey = setting.data.key.children, childLength = parentNode[childKey].length;
-			if (childLength > 0 && !parentNode[childKey][0].isHidden) {
-				parentNode[childKey][0].isFirstNode = true;
-			} else if (childLength > 0) {
-				view.setFirstNodeForHide(setting, parentNode[childKey]);
+      var children = data.nodeChildren(setting, parentNode);
+      var isHidden = data.isHidden(setting, children[0], false);
+			if (children.length > 0 && !isHidden) {
+        children[0].isFirstNode = true;
+			} else if (children.length > 0) {
+				view.setFirstNodeForHide(setting, children);
 			}
 		},
 		setLastNode: function(setting, parentNode) {
-			var childKey = setting.data.key.children, childLength = parentNode[childKey].length;
-			if (childLength > 0 && !parentNode[childKey][0].isHidden) {
-				parentNode[childKey][childLength - 1].isLastNode = true;
-			} else if (childLength > 0) {
-				view.setLastNodeForHide(setting, parentNode[childKey]);
+      var children = data.nodeChildren(setting, parentNode);
+      var isHidden = data.isHidden(setting, children[0]);
+			if (children.length > 0 && !isHidden) {
+        children[children.length - 1].isLastNode = true;
+			} else if (children.length > 0) {
+				view.setLastNodeForHide(setting, children);
 			}
 		},
 		setFirstNodeForHide: function(setting, nodes) {
@@ -183,7 +201,8 @@
 				if (n.isFirstNode) {
 					break;
 				}
-				if (!n.isHidden && !n.isFirstNode) {
+        var isHidden = data.isHidden(setting, n);
+				if (!isHidden && !n.isFirstNode) {
 					n.isFirstNode = true;
 					view.setNodeLineIcos(setting, n);
 					break;
@@ -197,10 +216,11 @@
 			var n,i,j, first, old;
 			for(i=0, j=nodes.length; i<j; i++) {
 				n = nodes[i];
-				if (!first && !n.isHidden && n.isFirstNode) {
+        var isHidden = data.isHidden(setting, n);
+				if (!first && !isHidden && n.isFirstNode) {
 					first = n;
 					break;
-				} else if (!first && !n.isHidden && !n.isFirstNode) {
+				} else if (!first && !isHidden && !n.isFirstNode) {
 					n.isFirstNode = true;
 					first = n;
 					view.setNodeLineIcos(setting, n);
@@ -222,7 +242,8 @@
 				if (n.isLastNode) {
 					break;
 				}
-				if (!n.isHidden && !n.isLastNode) {
+        var isHidden = data.isHidden(setting, n);
+				if (!isHidden && !n.isLastNode) {
 					n.isLastNode = true;
 					view.setNodeLineIcos(setting, n);
 					break;
@@ -236,10 +257,11 @@
 			var n,i,j, last, old;
 			for (i=nodes.length-1; i>=0; i--) {
 				n = nodes[i];
-				if (!last && !n.isHidden && n.isLastNode) {
+        var isHidden = data.isHidden(setting, n);
+				if (!last && !isHidden && n.isLastNode) {
 					last = n;
 					break;
-				} else if (!last && !n.isHidden && !n.isLastNode) {
+				} else if (!last && !isHidden && !n.isLastNode) {
 					n.isLastNode = true;
 					last = n;
 					view.setNodeLineIcos(setting, n);
@@ -267,37 +289,52 @@
 	consts = zt.consts,
 	view = zt._z.view,
 	data = zt._z.data,
-	event = zt._z.event;
+	event = zt._z.event,
+	$$ = tools.$;
 
+  data.isHidden = function(setting, node, newIsHidden) {
+    if (!node) {
+      return false;
+    }
+    var key = setting.data.key.isHidden;
+    if (typeof newIsHidden !== 'undefined') {
+      if (typeof newIsHidden === "string") {
+        newIsHidden = tools.eqs(checked, "true");
+      }
+      newIsHidden = !!newIsHidden;
+      node[key] = newIsHidden;
+    }
+    return node[key];
+  };
+
+  data.exSetting(_setting);
 	data.addInitNode(_initNode);
 	data.addBeforeA(_beforeA);
 	data.addZTreeTools(_zTreeTools);
 
 //	Override method in core
 	var _dInitNode = data.initNode;
-	data.tmpHideParent = -1;
-	data.initNode = function(setting, level, node, parentNode, isFirstNode, isLastNode, openFlag) {
-		if (data.tmpHideParent !== parentNode) {
-			data.tmpHideParent = parentNode;
-			var tmpPNode = (parentNode) ? parentNode: data.getRoot(setting),
-			children = tmpPNode[setting.data.key.children];
-			data.tmpHideFirstNode = view.setFirstNodeForHide(setting, children);
-			data.tmpHideLastNode = view.setLastNodeForHide(setting, children);
-			view.setNodeLineIcos(setting, data.tmpHideFirstNode);
-			view.setNodeLineIcos(setting, data.tmpHideLastNode);
-		}
-		isFirstNode = (data.tmpHideFirstNode === node);
-		isLastNode = (data.tmpHideLastNode === node);
-		if (_dInitNode) _dInitNode.apply(data, arguments);
-		if (isLastNode) {
-			view.clearOldLastNode(setting, node);
-		}
-	}
+    data.initNode = function(setting, level, node, parentNode, isFirstNode, isLastNode, openFlag) {
+        var tmpPNode = (parentNode) ? parentNode: data.getRoot(setting),
+            children = tmpPNode[setting.data.key.children];
+        data.tmpHideFirstNode = view.setFirstNodeForHide(setting, children);
+        data.tmpHideLastNode = view.setLastNodeForHide(setting, children);
+        if (openFlag) {
+            view.setNodeLineIcos(setting, data.tmpHideFirstNode);
+            view.setNodeLineIcos(setting, data.tmpHideLastNode);
+        }
+        isFirstNode = (data.tmpHideFirstNode === node);
+        isLastNode = (data.tmpHideLastNode === node);
+        if (_dInitNode) _dInitNode.apply(data, arguments);
+        if (openFlag && isLastNode) {
+            view.clearOldLastNode(setting, node, openFlag);
+        }
+    };
 
 	var _makeChkFlag = data.makeChkFlag;
 	if (!!_makeChkFlag) {
 		data.makeChkFlag = function(setting, node) {
-			if (!!node && !!node.isHidden) {
+			if (!!node && !!data.isHidden(setting, node)) {
 				return;
 			}
 			_makeChkFlag.apply(data, arguments);
@@ -309,7 +346,7 @@
 		data.getTreeCheckedNodes = function(setting, nodes, checked, results) {
 			if (!!nodes && nodes.length > 0) {
 				var p = nodes[0].getParentNode();
-				if (!!p && !!p.isHidden) {
+				if (!!p && !!data.isHidden(setting, p)) {
 					return [];
 				}
 			}
@@ -322,7 +359,7 @@
 		data.getTreeChangeCheckedNodes = function(setting, nodes, results) {
 			if (!!nodes && nodes.length > 0) {
 				var p = nodes[0].getParentNode();
-				if (!!p && !!p.isHidden) {
+				if (!!p && !!data.isHidden(setting, p)) {
 					return [];
 				}
 			}
@@ -333,7 +370,7 @@
 	var _expandCollapseSonNode = view.expandCollapseSonNode;
 	if (!!_expandCollapseSonNode) {
 		view.expandCollapseSonNode = function(setting, node, expandFlag, animateFlag, callback) {
-			if (!!node && !!node.isHidden) {
+			if (!!node && !!data.isHidden(setting, node)) {
 				return;
 			}
 			_expandCollapseSonNode.apply(view, arguments);
@@ -343,7 +380,7 @@
 	var _setSonNodeCheckBox = view.setSonNodeCheckBox;
 	if (!!_setSonNodeCheckBox) {
 		view.setSonNodeCheckBox = function(setting, node, value, srcNode) {
-			if (!!node && !!node.isHidden) {
+			if (!!node && !!data.isHidden(setting, node)) {
 				return;
 			}
 			_setSonNodeCheckBox.apply(view, arguments);
@@ -353,7 +390,7 @@
 	var _repairParentChkClassWithSelf = view.repairParentChkClassWithSelf;
 	if (!!_repairParentChkClassWithSelf) {
 		view.repairParentChkClassWithSelf = function(setting, node) {
-			if (!!node && !!node.isHidden) {
+			if (!!node && !!data.isHidden(setting, node)) {
 				return;
 			}
 			_repairParentChkClassWithSelf.apply(view, arguments);

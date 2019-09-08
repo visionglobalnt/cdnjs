@@ -1,5 +1,5 @@
 /*
- * JQuery zTree exedit 3.5.01
+ * JQuery zTree exedit v3.5.15
  * http://zTree.me/
  *
  * Copyright (c) 2010 Hunter.z
@@ -8,7 +8,7 @@
  * http://www.opensource.org/licenses/mit-license.php
  *
  * email: hunter.z@263.net
- * Date: 2012-12-21
+ * Date: 2013-10-15
  */
 (function($){
 	//default consts of exedit
@@ -75,14 +75,14 @@
 	},
 	//default root of exedit
 	_initRoot = function (setting) {
-		var r = data.getRoot(setting);
+		var r = data.getRoot(setting), rs = data.getRoots();
 		r.curEditNode = null;
 		r.curEditInput = null;
 		r.curHoverNode = null;
 		r.dragFlag = 0;
 		r.dragNodeShowBefore = [];
 		r.dragMaskList = new Array();
-		r.showHoverDom = true;
+		rs.showHoverDom = true;
 	},
 	//default cache of exedit
 	_initCache = function(treeId) {},
@@ -90,8 +90,8 @@
 	_bindEvent = function(setting) {
 		var o = setting.treeObj;
 		var c = consts.event;
-		o.bind(c.RENAME, function (event, treeId, treeNode) {
-			tools.apply(setting.callback.onRename, [event, treeId, treeNode]);
+		o.bind(c.RENAME, function (event, treeId, treeNode, isCancel) {
+			tools.apply(setting.callback.onRename, [event, treeId, treeNode, isCancel]);
 		});
 
 		o.bind(c.REMOVE, function (event, treeId, treeNode) {
@@ -127,7 +127,7 @@
 		if (tools.eqs(e.type, "mouseover")) {
 			tmp = tools.getMDom(setting, target, [{tagName:"a", attrName:"treeNode"+consts.id.A}]);
 			if (tmp) {
-				tId = tmp.parentNode.id;
+				tId = tools.getNodeMainDom(tmp).id;
 				nodeEventType = "hoverOverNode";
 			}
 		} else if (tools.eqs(e.type, "mouseout")) {
@@ -139,7 +139,7 @@
 		} else if (tools.eqs(e.type, "mousedown")) {
 			tmp = tools.getMDom(setting, target, [{tagName:"a", attrName:"treeNode"+consts.id.A}]);
 			if (tmp) {
-				tId = tmp.parentNode.id;
+				tId = tools.getNodeMainDom(tmp).id;
 				nodeEventType = "mousedownNode";
 			}
 		}
@@ -176,11 +176,9 @@
 	//update zTreeObj, add method of edit
 	_zTreeTools = function(setting, zTreeTools) {
 		zTreeTools.cancelEditName = function(newName) {
-			var root = data.getRoot(setting),
-			nameKey = setting.data.key.name,
-			node = root.curEditNode;
+			var root = data.getRoot(setting);
 			if (!root.curEditNode) return;
-			view.cancelCurEditNode(setting, newName?newName:node[nameKey]);
+			view.cancelCurEditNode(setting, newName?newName:null, true);
 		}
 		zTreeTools.copyNode = function(targetNode, node, moveType, isSilent) {
 			if (!node) return null;
@@ -215,7 +213,7 @@
 			if (!node) return node;
 			if (targetNode && !targetNode.isParent && setting.data.keep.leaf && moveType === consts.move.TYPE_INNER) {
 				return null;
-			} else if (targetNode && ((node.parentTId == targetNode.tId && moveType == consts.move.TYPE_INNER) || $("#" + node.tId).find("#" + targetNode.tId).length > 0)) {
+			} else if (targetNode && ((node.parentTId == targetNode.tId && moveType == consts.move.TYPE_INNER) || $$(node, setting).find("#" + targetNode.tId).length > 0)) {
 				return null;
 			} else if (!targetNode) {
 				targetNode = null;
@@ -223,7 +221,7 @@
 			function moveCallback() {
 				view.moveNode(setting, targetNode, node, moveType, false, isSilent);
 			}
-			if (tools.canAsync(setting, targetNode)) {
+			if (tools.canAsync(setting, targetNode) && moveType === consts.move.TYPE_INNER) {
 				view.asyncNode(setting, targetNode, isSilent, moveCallback);
 			} else {
 				moveCallback();
@@ -273,7 +271,7 @@
 		onMousedownNode: function(eventMouseDown, _node) {
 			var i,l,
 			setting = data.getSetting(eventMouseDown.data.treeId),
-			root = data.getRoot(setting);
+			root = data.getRoot(setting), roots = data.getRoots();
 			//right click can't drag & drop
 			if (eventMouseDown.button == 2 || !setting.edit.enable || (!setting.edit.drag.isCopy && !setting.edit.drag.isMove)) return true;
 
@@ -297,12 +295,13 @@
 			}
 
 			view.editNodeBlur = true;
-			view.cancelCurEditNode(setting, null, true);
-			
+			view.cancelCurEditNode(setting);
 
-			var doc = $(document), curNode, tmpArrow, tmpTarget,
+			var doc = $(setting.treeObj.get(0).ownerDocument),
+			body = $(setting.treeObj.get(0).ownerDocument.body), curNode, tmpArrow, tmpTarget,
 			isOtherTree = false,
 			targetSetting = setting,
+			sourceSetting = setting,
 			preNode, nextNode,
 			preTmpTargetNodeId = null,
 			preTmpMoveType = null,
@@ -323,8 +322,7 @@
 				}
 				var i, l, tmpNode, tmpDom, tmpNodes,
 				childKey = setting.data.key.children;
-				tools.noSel(setting);
-				$("body").css("cursor", "pointer");
+				body.css("cursor", "pointer");
 
 				if (root.dragFlag == 0) {
 					if (tools.apply(setting.callback.beforeDrag, [setting.treeId, nodes], true) == false) {
@@ -346,7 +344,7 @@
 					}
 
 					root.dragFlag = 1;
-					root.showHoverDom = false;
+					roots.showHoverDom = false;
 					tools.showIfameMask(setting, true);
 
 					//sort
@@ -374,31 +372,31 @@
 					}
 
 					//set node in selected
-					curNode = $("<ul class='zTreeDragUL'></ul>");
+					curNode = $$("<ul class='zTreeDragUL'></ul>", setting);
 					for (i=0, l=nodes.length; i<l; i++) {
 						tmpNode = nodes[i];
 						tmpNode.editNameFlag = false;
 						view.selectNode(setting, tmpNode, i>0);
 						view.removeTreeDom(setting, tmpNode);
 
-						tmpDom = $("<li id='"+ tmpNode.tId +"_tmp'></li>");
-						tmpDom.append($("#" + tmpNode.tId + consts.id.A).clone());
+						tmpDom = $$("<li id='"+ tmpNode.tId +"_tmp'></li>", setting);
+						tmpDom.append($$(tmpNode, consts.id.A, setting).clone());
 						tmpDom.css("padding", "0");
 						tmpDom.children("#" + tmpNode.tId + consts.id.A).removeClass(consts.node.CURSELECTED);
 						curNode.append(tmpDom);
 						if (i == setting.edit.drag.maxShowNodeNum-1) {
-							tmpDom = $("<li id='"+ tmpNode.tId +"_moretmp'><a>  ...  </a></li>");
+							tmpDom = $$("<li id='"+ tmpNode.tId +"_moretmp'><a>  ...  </a></li>", setting);
 							curNode.append(tmpDom);
 							break;
 						}
 					}
 					curNode.attr("id", nodes[0].tId + consts.id.UL + "_tmp");
 					curNode.addClass(setting.treeObj.attr("class"));
-					curNode.appendTo("body");
+					curNode.appendTo(body);
 
-					tmpArrow = $("<span class='tmpzTreeMove_arrow'></span>");
+					tmpArrow = $$("<span class='tmpzTreeMove_arrow'></span>", setting);
 					tmpArrow.attr("id", "zTreeMove_arrow_tmp");
-					tmpArrow.appendTo("body");
+					tmpArrow.appendTo(body);
 
 					setting.treeObj.trigger(consts.event.DRAG, [event, setting.treeId, nodes]);
 				}
@@ -446,7 +444,7 @@
 					isTreeLeft = (isLeft && targetSetting.treeObj.scrollLeft() <= 0),
 					isTreeRight = (isRight && (targetSetting.treeObj.scrollLeft() + targetSetting.treeObj.width()+10) >= scrollWidth);
 
-					if (event.target.id && targetSetting.treeObj.find("#" + event.target.id).length > 0) {
+					if (event.target && tools.isChildOrSelf(event.target, targetSetting.treeId)) {
 						//get node <li> dom
 						var targetObj = event.target;
 						while (targetObj && targetObj.tagName && !tools.eqs(targetObj.tagName, "li") && targetObj.id != targetSetting.treeId) {
@@ -460,23 +458,20 @@
 							if (targetObj.id === tmpNode.tId) {
 								canMove = false;
 								break;
-							} else if ($("#" + tmpNode.tId).find("#" + targetObj.id).length > 0) {
+							} else if ($$(tmpNode, setting).find("#" + targetObj.id).length > 0) {
 								canMove = false;
 								break;
 							}
 						}
-						if (canMove) {
-							if (event.target.id &&
-								(event.target.id == (targetObj.id + consts.id.A) || $(event.target).parents("#" + targetObj.id + consts.id.A).length > 0)) {
-								tmpTarget = $(targetObj);
-								tmpTargetNodeId = targetObj.id;
-							}
+						if (canMove && event.target && tools.isChildOrSelf(event.target, targetObj.id + consts.id.A)) {
+							tmpTarget = $(targetObj);
+							tmpTargetNodeId = targetObj.id;
 						}
 					}
 
 					//the mouse must be in zTree
 					tmpNode = nodes[0];
-					if (isTreeInner && (event.target.id == targetSetting.treeId || $(event.target).parents("#" + targetSetting.treeId).length>0)) {
+					if (isTreeInner && tools.isChildOrSelf(event.target, targetSetting.treeId)) {
 						//judge mouse move in root of ztree
 						if (!tmpTarget && (event.target.id == targetSetting.treeId || isTreeTop || isTreeBottom || isTreeLeft || isTreeRight) && (isOtherTree || (!isOtherTree && tmpNode.parentTId))) {
 							tmpTarget = targetSetting.treeObj;
@@ -561,7 +556,7 @@
 								if (window.zTreeMoveTimer && window.zTreeMoveTargetNodeTId !== tmpTargetNode.tId) {
 									clearTimeout(window.zTreeMoveTimer);
 									window.zTreeMoveTargetNodeTId = null;
-								} else if (window.zTreeMoveTimer && window.zTreeMoveTargetNodeTId === tmpTargetNode.tId) {
+								}else if (window.zTreeMoveTimer && window.zTreeMoveTargetNodeTId === tmpTargetNode.tId) {
 									startTimer = false;
 								}
 								if (startTimer) {
@@ -611,7 +606,7 @@
 				doc.unbind("mousemove", _docMouseMove);
 				doc.unbind("mouseup", _docMouseUp);
 				doc.unbind("selectstart", _docSelect);
-				$("body").css("cursor", "auto");
+				body.css("cursor", "auto");
 				if (tmpTarget) {
 					tmpTarget.removeClass(consts.node.TMPTARGET_TREE);
 					if (tmpTargetNodeId) $("#" + tmpTargetNodeId + consts.id.A, tmpTarget).removeClass(consts.node.TMPTARGET_NODE + "_" + consts.move.TYPE_PREV)
@@ -619,7 +614,7 @@
 				}
 				tools.showIfameMask(setting, false);
 
-				root.showHoverDom = true;
+				roots.showHoverDom = true;
 				if (root.dragFlag == 0) return;
 				root.dragFlag = 0;
 
@@ -641,11 +636,14 @@
 				}
 				if (tmpTarget) {
 					var dragTargetNode = tmpTargetNodeId == null ? null: data.getNodeCache(targetSetting, tmpTargetNodeId);
-					if (tools.apply(setting.callback.beforeDrop, [targetSetting.treeId, nodes, dragTargetNode, moveType, isCopy], true) == false) return;
+					if (tools.apply(setting.callback.beforeDrop, [targetSetting.treeId, nodes, dragTargetNode, moveType, isCopy], true) == false) {
+						view.selectNodes(sourceSetting, nodes);
+						return;
+					}
 					var newNodes = isCopy ? tools.clone(nodes) : nodes;
-					
+
 					function dropCallback() {
-						if (isOtherTree) {							
+						if (isOtherTree) {
 							if (!isCopy) {
 								for(var i=0, l=nodes.length; i<l; i++) {
 									view.removeNode(setting, nodes[i]);
@@ -683,11 +681,10 @@
 								}
 							}
 						}
-						for (i=0, l=newNodes.length; i<l; i++) {
-							view.selectNode(targetSetting, newNodes[i], i>0);
-						}
-						$("#" + newNodes[0].tId).focus().blur();
+						view.selectNodes(targetSetting, newNodes);
+						$$(newNodes[0], setting).focus().blur();
 
+						setting.treeObj.trigger(consts.event.DROP, [event, targetSetting.treeId, newNodes, dragTargetNode, moveType, isCopy]);
 					}
 
 					if (moveType == consts.move.TYPE_INNER && tools.canAsync(targetSetting, dragTargetNode)) {
@@ -696,11 +693,8 @@
 						dropCallback();
 					}
 
-					setting.treeObj.trigger(consts.event.DROP, [event, targetSetting.treeId, newNodes, dragTargetNode, moveType, isCopy]);
 				} else {
-					for (i=0, l=nodes.length; i<l; i++) {
-						view.selectNode(targetSetting, nodes[i], i>0);
-					}
+					view.selectNodes(sourceSetting, nodes);
 					setting.treeObj.trigger(consts.event.DROP, [event, setting.treeId, nodes, null, null, null]);
 				}
 			}
@@ -721,8 +715,10 @@
 	//method of tools for zTree
 	_tools = {
 		getAbs: function (obj) {
-			var oRect = obj.getBoundingClientRect();
-			return [oRect.left,oRect.top]
+			var oRect = obj.getBoundingClientRect(),
+			scrollTop = document.body.scrollTop+document.documentElement.scrollTop,
+			scrollLeft = document.body.scrollLeft+document.documentElement.scrollLeft;
+			return [oRect.left+scrollLeft,oRect.top+scrollTop];
 		},
 		inputFocus: function(inputObj) {
 			if (inputObj.get(0)) {
@@ -757,12 +753,12 @@
 			}
 			if (showSign) {
 				//show mask
-				var iframeList = $("iframe");
+				var iframeList = $$("iframe", setting);
 				for (var i = 0, l = iframeList.length; i < l; i++) {
 					var obj = iframeList.get(i),
 					r = tools.getAbs(obj),
-					dragMask = $("<div id='zTreeMask_" + i + "' class='zTreeMask' style='top:" + r[1] + "px; left:" + r[0] + "px; width:" + obj.offsetWidth + "px; height:" + obj.offsetHeight + "px;'></div>");
-					dragMask.appendTo("body");
+					dragMask = $$("<div id='zTreeMask_" + i + "' class='zTreeMask' style='top:" + r[1] + "px; left:" + r[0] + "px; width:" + obj.offsetWidth + "px; height:" + obj.offsetHeight + "px;'></div>", setting);
+					dragMask.appendTo($$("body", setting));
 					root.dragMaskList.push(dragMask);
 				}
 			}
@@ -771,17 +767,17 @@
 	//method of operate ztree dom
 	_view = {
 		addEditBtn: function(setting, node) {
-			if (node.editNameFlag || $("#" + node.tId + consts.id.EDIT).length > 0) {
+			if (node.editNameFlag || $$(node, consts.id.EDIT, setting).length > 0) {
 				return;
 			}
 			if (!tools.apply(setting.edit.showRenameBtn, [setting.treeId, node], setting.edit.showRenameBtn)) {
 				return;
 			}
-			var aObj = $("#" + node.tId + consts.id.A),
-			editStr = "<span class='button edit' id='" + node.tId + consts.id.EDIT + "' title='"+tools.apply(setting.edit.renameTitle, [setting.treeId, node], setting.edit.renameTitle)+"' treeNode"+consts.id.EDIT+" style='display:none;'></span>";
+			var aObj = $$(node, consts.id.A, setting),
+			editStr = "<span class='" + consts.className.BUTTON + " edit' id='" + node.tId + consts.id.EDIT + "' title='"+tools.apply(setting.edit.renameTitle, [setting.treeId, node], setting.edit.renameTitle)+"' treeNode"+consts.id.EDIT+" style='display:none;'></span>";
 			aObj.append(editStr);
 
-			$("#" + node.tId + consts.id.EDIT).bind('click',
+			$$(node, consts.id.EDIT, setting).bind('click',
 				function() {
 					if (!tools.uCanDo(setting) || tools.apply(setting.callback.beforeEditName, [setting.treeId, node], true) == false) return false;
 					view.editNode(setting, node);
@@ -790,17 +786,17 @@
 				).show();
 		},
 		addRemoveBtn: function(setting, node) {
-			if (node.editNameFlag || $("#" + node.tId + consts.id.REMOVE).length > 0) {
+			if (node.editNameFlag || $$(node, consts.id.REMOVE, setting).length > 0) {
 				return;
 			}
 			if (!tools.apply(setting.edit.showRemoveBtn, [setting.treeId, node], setting.edit.showRemoveBtn)) {
 				return;
 			}
-			var aObj = $("#" + node.tId + consts.id.A),
-			removeStr = "<span class='button remove' id='" + node.tId + consts.id.REMOVE + "' title='"+tools.apply(setting.edit.removeTitle, [setting.treeId, node], setting.edit.removeTitle)+"' treeNode"+consts.id.REMOVE+" style='display:none;'></span>";
+			var aObj = $$(node, consts.id.A, setting),
+			removeStr = "<span class='" + consts.className.BUTTON + " remove' id='" + node.tId + consts.id.REMOVE + "' title='"+tools.apply(setting.edit.removeTitle, [setting.treeId, node], setting.edit.removeTitle)+"' treeNode"+consts.id.REMOVE+" style='display:none;'></span>";
 			aObj.append(removeStr);
 
-			$("#" + node.tId + consts.id.REMOVE).bind('click',
+			$$(node, consts.id.REMOVE, setting).bind('click',
 				function() {
 					if (!tools.uCanDo(setting) || tools.apply(setting.callback.beforeRemove, [setting.treeId, node], true) == false) return false;
 					view.removeNode(setting, node);
@@ -814,7 +810,7 @@
 				).show();
 		},
 		addHoverDom: function(setting, node) {
-			if (data.getRoot(setting).showHoverDom) {
+			if (data.getRoots().showHoverDom) {
 				node.isHover = true;
 				if (setting.edit.enable) {
 					view.addEditBtn(setting, node);
@@ -823,23 +819,21 @@
 				tools.apply(setting.view.addHoverDom, [setting.treeId, node]);
 			}
 		},
-		cancelCurEditNode: function (setting, forceName) {
+		cancelCurEditNode: function (setting, forceName, isCancel) {
 			var root = data.getRoot(setting),
 			nameKey = setting.data.key.name,
 			node = root.curEditNode;
-			
+
 			if (node) {
-				var inputObj = root.curEditInput;
-				var newName = forceName ? forceName:inputObj.val();
-				if (!forceName && tools.apply(setting.callback.beforeRename, [setting.treeId, node, newName], true) === false) {
+				var inputObj = root.curEditInput,
+				newName = forceName ? forceName:(isCancel ? node[nameKey]: inputObj.val());
+				if (tools.apply(setting.callback.beforeRename, [setting.treeId, node, newName, isCancel], true) === false) {
 					return false;
 				} else {
-					node[nameKey] = newName ? newName:inputObj.val();
-					if (!forceName) {
-						setting.treeObj.trigger(consts.event.RENAME, [setting.treeId, node]);
-					}
+					node[nameKey] = newName;
+					setting.treeObj.trigger(consts.event.RENAME, [setting.treeId, node, isCancel]);
 				}
-				var aObj = $("#" + node.tId + consts.id.A);
+				var aObj = $$(node, consts.id.A, setting);
 				aObj.removeClass(consts.node.CURSELECTED_EDIT);
 				inputObj.unbind();
 				view.setNodeName(setting, node);
@@ -863,8 +857,8 @@
 			view.removeTreeDom(setting, node);
 			view.cancelCurEditNode(setting);
 			view.selectNode(setting, node, false);
-			$("#" + node.tId + consts.id.SPAN).html("<input type=text class='rename' id='" + node.tId + consts.id.INPUT + "' treeNode" + consts.id.INPUT + " >");
-			var inputObj = $("#" + node.tId + consts.id.INPUT);
+			$$(node, consts.id.SPAN, setting).html("<input type=text class='rename' id='" + node.tId + consts.id.INPUT + "' treeNode" + consts.id.INPUT + " >");
+			var inputObj = $$(node, consts.id.INPUT, setting);
 			inputObj.attr("value", node[nameKey]);
 			if (setting.edit.editNameSelectAll) {
 				tools.inputSelect(inputObj);
@@ -879,9 +873,9 @@
 			}).bind('keydown', function(event) {
 				if (event.keyCode=="13") {
 					view.editNodeBlur = true;
-					view.cancelCurEditNode(setting, null, true);
+					view.cancelCurEditNode(setting);
 				} else if (event.keyCode=="27") {
-					view.cancelCurEditNode(setting, node[nameKey]);
+					view.cancelCurEditNode(setting, null, true);
 				}
 			}).bind('click', function(event) {
 				return false;
@@ -889,7 +883,7 @@
 				return false;
 			});
 
-			$("#" + node.tId + consts.id.A).addClass(consts.node.CURSELECTED_EDIT);
+			$$(node, consts.id.A, setting).addClass(consts.node.CURSELECTED_EDIT);
 			root.curEditInput = inputObj;
 			root.noSelection = false;
 			root.curEditNode = node;
@@ -908,7 +902,7 @@
 			if (moveType != consts.move.TYPE_PREV && moveType != consts.move.TYPE_NEXT) {
 				moveType = consts.move.TYPE_INNER;
 			}
-			
+
 			if (moveType == consts.move.TYPE_INNER) {
 				if (targetNodeIsRoot) {
 					//parentTId of root node is null
@@ -934,16 +928,16 @@
 				} else if (!isSilent) {
 					view.expandCollapseNode(setting, targetNode.getParentNode(), true, false);
 				}
-				targetObj = $("#" + targetNode.tId);
-				target_ulObj = $("#" + targetNode.tId + consts.id.UL);
+				targetObj = $$(targetNode, setting);
+				target_ulObj = $$(targetNode, consts.id.UL, setting);
 				if (!!targetObj.get(0) && !target_ulObj.get(0)) {
 					var ulstr = [];
 					view.makeUlHtml(setting, targetNode, ulstr, '');
 					targetObj.append(ulstr.join(''));
 				}
-				target_ulObj = $("#" + targetNode.tId + consts.id.UL);
+				target_ulObj = $$(targetNode, consts.id.UL, setting);
 			}
-			var nodeDom = $("#" + node.tId);
+			var nodeDom = $$(node, setting);
 			if (!nodeDom.get(0)) {
 				nodeDom = view.appendNodes(setting, node.level, [node], null, false, true).join('');
 			} else if (!targetObj.get(0)) {
@@ -1037,9 +1031,9 @@
 				//old parentNode has no child nodes
 				oldParentNode.isParent = false;
 				oldParentNode.open = false;
-				var tmp_ulObj = $("#" + oldParentNode.tId + consts.id.UL),
-				tmp_switchObj = $("#" + oldParentNode.tId + consts.id.SWITCH),
-				tmp_icoObj = $("#" + oldParentNode.tId + consts.id.ICON);
+				var tmp_ulObj = $$(oldParentNode, consts.id.UL, setting),
+				tmp_switchObj = $$(oldParentNode, consts.id.SWITCH, setting),
+				tmp_icoObj = $$(oldParentNode, consts.id.ICON, setting);
 				view.replaceSwitchClass(oldParentNode, tmp_switchObj, consts.folder.DOCU);
 				view.replaceIcoClass(oldParentNode, tmp_icoObj, consts.folder.DOCU);
 				tmp_ulObj.css("display", "none");
@@ -1067,31 +1061,36 @@
 				view.expandCollapseParentNode(setting, node.getParentNode(), true, animateFlag);
 			}
 		},
-		removeEditBtn: function(node) {
-			$("#" + node.tId + consts.id.EDIT).unbind().remove();
+		removeEditBtn: function(setting, node) {
+			$$(node, consts.id.EDIT, setting).unbind().remove();
 		},
-		removeRemoveBtn: function(node) {
-			$("#" + node.tId + consts.id.REMOVE).unbind().remove();
+		removeRemoveBtn: function(setting, node) {
+			$$(node, consts.id.REMOVE, setting).unbind().remove();
 		},
 		removeTreeDom: function(setting, node) {
 			node.isHover = false;
-			view.removeEditBtn(node);
-			view.removeRemoveBtn(node);
+			view.removeEditBtn(setting, node);
+			view.removeRemoveBtn(setting, node);
 			tools.apply(setting.view.removeHoverDom, [setting.treeId, node]);
 		},
 		repairNodeLevelClass: function(setting, node, oldLevel) {
 			if (oldLevel === node.level) return;
-			var liObj = $("#" + node.tId),
-			aObj = $("#" + node.tId + consts.id.A),
-			ulObj = $("#" + node.tId + consts.id.UL),
-			oldClass = "level" + oldLevel,
-			newClass = "level" + node.level;
+			var liObj = $$(node, setting),
+			aObj = $$(node, consts.id.A, setting),
+			ulObj = $$(node, consts.id.UL, setting),
+			oldClass = consts.className.LEVEL + oldLevel,
+			newClass = consts.className.LEVEL + node.level;
 			liObj.removeClass(oldClass);
 			liObj.addClass(newClass);
 			aObj.removeClass(oldClass);
 			aObj.addClass(newClass);
 			ulObj.removeClass(oldClass);
 			ulObj.addClass(newClass);
+		},
+		selectNodes : function(setting, nodes) {
+			for (var i=0, l=nodes.length; i<l; i++) {
+				view.selectNode(setting, nodes[i], i>0);
+			}
 		}
 	},
 
@@ -1109,7 +1108,8 @@
 	consts = zt.consts,
 	view = zt._z.view,
 	data = zt._z.data,
-	event = zt._z.event;
+	event = zt._z.event,
+	$$ = tools.$;
 
 	data.exSetting(_setting);
 	data.addInitBind(_bindEvent);
@@ -1173,6 +1173,10 @@
 		var root = data.getRoot(setting);
 		if (e && (tools.eqs(e.type, "mouseover") || tools.eqs(e.type, "mouseout") || tools.eqs(e.type, "mousedown") || tools.eqs(e.type, "mouseup"))) {
 			return true;
+		}
+		if (root.curEditNode) {
+			view.editNodeBlur = false;
+			root.curEditInput.focus();
 		}
 		return (!root.curEditNode) && (_uCanDo ? _uCanDo.apply(view, arguments) : true);
 	}
